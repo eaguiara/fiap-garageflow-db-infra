@@ -35,6 +35,8 @@ jobs:
       - run: terraform init
       - name: Show destroy plan
         run: terraform plan -destroy
+        env:
+          TF_VAR_sql_db_password: ${{ secrets.SQL_DB_PASSWORD }}
       - name: Destroy all resources
         run: terraform destroy -auto-approve
         env:
