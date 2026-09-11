@@ -1,3 +1,3 @@
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "garage-flow-terraform-state"
+  bucket_prefix = "garage-flow-terraform-state-"
 }
