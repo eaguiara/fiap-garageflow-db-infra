@@ -37,7 +37,3 @@ resource "aws_db_instance" "sql_server" {
   skip_final_snapshot    = true
   vpc_security_group_ids = [aws_security_group.sql_server_sg.id]
 }
-
-output "sql_endpoint" {
-  value = aws_db_instance.sql_server.address
-}
