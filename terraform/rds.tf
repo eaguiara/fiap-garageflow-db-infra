@@ -1,6 +1,7 @@
 resource "aws_security_group" "sql_server_sg" {
   name        = "garage-flow-sg"
   description = "Security group for the private GarageFlow RDS instance"
+  vpc_id      = aws_vpc.garage_flow_vpc.id
 
   ingress {
     from_port   = 1433
@@ -36,4 +37,8 @@ resource "aws_db_instance" "sql_server" {
   db_subnet_group_name   = aws_db_subnet_group.sql_server.name
   skip_final_snapshot    = true
   vpc_security_group_ids = [aws_security_group.sql_server_sg.id]
+}
+
+output "sql_endpoint" {
+  value = aws_db_instance.sql_server.address
 }
