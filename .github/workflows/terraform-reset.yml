@@ -4,74 +4,38 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to reset (dev/staging/prod)'
+        description: 'Environment to reset'
         required: true
-        default: 'dev'
+        default: 'homologacao'
         type: choice
         options:
-          - dev
-          - staging
+          - homologacao
+          - producao
 
 permissions:
   contents: read
 
-env:
-  TF_VERSION: '1.5.0'
-  AWS_REGION: us-east-1
-
 jobs:
-  terraform-reset:
-    name: Reset Terraform State
+  reset:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
-    
+    defaults:
+      run:
+        working-directory: terraform
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+          terraform_version: 1.8.5
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Initialize Terraform
-        working-directory: ./terraform
-        run: terraform init
-
-      - name: Show Terraform plan (destroy)
-        working-directory: ./terraform
-        run: terraform plan -destroy -out=destroy.tfplan
-
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
+      - run: terraform init
+      - name: Show destroy plan
+        run: terraform plan -destroy
       - name: Destroy all resources
-        working-directory: ./terraform
-        run: |
-          echo "⚠️  DESTROYING ALL INFRASTRUCTURE FOR ${{ github.event.inputs.environment }} ENVIRONMENT"
-          terraform destroy -auto-approve -lock=false
+        run: terraform destroy -auto-approve
         env:
-          TF_VAR_sql_db_user: ${{ secrets.SQL_DB_USER }}
           TF_VAR_sql_db_password: ${{ secrets.SQL_DB_PASSWORD }}
-          TF_VAR_sql_db_name: ${{ secrets.SQL_DB_NAME }}
-          TF_VAR_allowed_db_cidr_blocks: ${{ secrets.ALLOWED_DB_CIDR_BLOCKS }}
-
-      - name: Clean up state files
-        working-directory: ./terraform
-        run: |
-          rm -f terraform.tfstate*
-          echo "✅ State files cleaned up"
-
-      - name: Summary
-        run: |
-          echo "## ✅ Terraform Reset Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Environment: **${{ github.event.inputs.environment }}**" >> $GITHUB_STEP_SUMMARY
-          echo "- All resources destroyed" >> $GITHUB_STEP_SUMMARY
-          echo "- State files cleaned" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "Run the **Deploy** workflow to recreate the infrastructure" >> $GITHUB_STEP_SUMMARY
