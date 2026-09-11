@@ -83,7 +83,7 @@ resource "aws_subnet" "garage_flow_subnet_az_b" {
 resource "aws_eip" "garage_flow_nat_eip" {
   domain = "vpc"
 
-  depends_on = [try(aws_internet_gateway.garage_flow_igw, null)]
+  depends_on = [aws_internet_gateway.garage_flow_igw]
 
   lifecycle {
     ignore_changes = [tags]
@@ -95,7 +95,7 @@ resource "aws_nat_gateway" "garage_flow_nat" {
   allocation_id = try(aws_eip.garage_flow_nat_eip.id, null)
   subnet_id     = try(aws_subnet.garage_flow_subnet_az_a.id, null)
 
-  depends_on = [try(aws_internet_gateway.garage_flow_igw, null)]
+  depends_on = [aws_internet_gateway.garage_flow_igw]
 
   tags = {
     Name = "garage_flow_nat"
