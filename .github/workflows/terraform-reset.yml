@@ -2,6 +2,15 @@ name: Terraform Reset
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment containing the AWS and database secrets
+        required: true
+        default: homologacao
+        type: choice
+        options:
+          - homologacao
+          - producao
 
 permissions:
   contents: read
@@ -9,6 +18,10 @@ permissions:
 jobs:
   reset:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      TF_INPUT: "0"
+      TF_VAR_sql_db_password: ${{ secrets.SQL_DB_PASSWORD }}
     defaults:
       run:
         working-directory: terraform
@@ -27,5 +40,3 @@ jobs:
         run: terraform plan -destroy
       - name: Destroy all resources
         run: terraform destroy -auto-approve
-        env:
-          TF_VAR_sql_db_password: ${{ secrets.SQL_DB_PASSWORD }}
