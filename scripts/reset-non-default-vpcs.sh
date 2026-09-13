@@ -36,7 +36,17 @@ for vpc_id in "${vpc_ids[@]}"; do
   done
   if [[ ${#nat_gateway_ids[@]} -gt 0 ]]; then
     aws ec2 wait nat-gateway-deleted --nat-gateway-ids "${nat_gateway_ids[@]}"
+    # Give a grace period for ENIs to fully release
+    sleep 5
   fi
+
+  # Clean up Network Interfaces
+  mapfile -t eni_ids < <(aws ec2 describe-network-interfaces \
+    --filters "Name=vpc-id,Values=${vpc_id}" \
+    --query 'NetworkInterfaces[].NetworkInterfaceId' --output text | tr '\t' '\n')
+  for eni_id in "${eni_ids[@]}"; do
+    [[ -n ${eni_id} ]] && aws ec2 delete-network-interface --network-interface-id "${eni_id}" || true
+  done
 
   mapfile -t vpc_endpoint_ids < <(aws ec2 describe-vpc-endpoints \
     --filters "Name=vpc-id,Values=${vpc_id}" \
