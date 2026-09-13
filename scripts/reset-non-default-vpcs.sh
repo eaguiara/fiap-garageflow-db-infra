@@ -40,6 +40,14 @@ for vpc_id in "${vpc_ids[@]}"; do
     sleep 5
   fi
 
+  # Release Elastic IPs associated with the VPC
+  mapfile -t eip_allocation_ids < <(aws ec2 describe-addresses \
+    --filters "Name=domain,Values=vpc" \
+    --query "Addresses[].AllocationId" --output text | tr '\t' '\n')
+  for eip_allocation_id in "${eip_allocation_ids[@]}"; do
+    [[ -n ${eip_allocation_id} ]] && aws ec2 release-address --allocation-id "${eip_allocation_id}" || true
+  done
+
   # Clean up Network Interfaces
   mapfile -t eni_ids < <(aws ec2 describe-network-interfaces \
     --filters "Name=vpc-id,Values=${vpc_id}" \
