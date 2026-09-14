@@ -37,7 +37,17 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
       - name: Delete all supported regional resources
         run: bash ../scripts/reset-non-default-vpcs.sh --force
-      - run: terraform init
+      - name: Create Terraform state bucket
+        id: state
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          state_bucket="garage-flow-terraform-state-${account_id}-${AWS_REGION}"
+          if ! aws s3api head-bucket --bucket "${state_bucket}" 2>/dev/null; then
+            aws s3api create-bucket --bucket "${state_bucket}" --create-bucket-configuration "LocationConstraint=${AWS_REGION}"
+          fi
+          aws s3api put-bucket-versioning --bucket "${state_bucket}" --versioning-configuration Status=Enabled
+          echo "bucket=${state_bucket}" >> "${GITHUB_OUTPUT}"
+      - run: terraform init -backend-config="bucket=${{ steps.state.outputs.bucket }}" -backend-config="key=garage-flow/database.tfstate" -backend-config="region=${AWS_REGION}" -backend-config="encrypt=true"
       - name: Show destroy plan
         run: terraform plan -destroy
       - name: Destroy all resources

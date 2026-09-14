@@ -133,6 +133,8 @@ for vpc_id in "${vpc_ids[@]}"; do
   done
 
   mapfile -t route_table_ids < <(aws_ids ec2 describe-route-tables --filters "Name=vpc-id,Values=${vpc_id}" --query 'RouteTables[?Associations[?Main==`false`]].RouteTableId')
+  mapfile -t unassociated_route_table_ids < <(aws_ids ec2 describe-route-tables --filters "Name=vpc-id,Values=${vpc_id}" --query 'RouteTables[?length(Associations)==`0`].RouteTableId')
+  route_table_ids+=("${unassociated_route_table_ids[@]}")
   for route_table_id in "${route_table_ids[@]}"; do
     aws ec2 delete-route-table --route-table-id "${route_table_id}"
   done
