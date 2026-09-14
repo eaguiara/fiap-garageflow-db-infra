@@ -13,6 +13,16 @@ aws_ids() {
   aws "$@" --output text | tr '\t' '\n' | sed '/^None$/d;/^$/d'
 }
 
+report_vpc_dependencies() {
+  local vpc_id="$1"
+
+  echo "VPC ${vpc_id} could not be deleted. Remaining dependencies:"
+  aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=${vpc_id}" --query 'NetworkInterfaces[].{Id:NetworkInterfaceId,Status:Status,Type:InterfaceType,Description:Description}' --output table || true
+  aws ec2 describe-route-tables --filters "Name=vpc-id,Values=${vpc_id}" --query 'RouteTables[].{Id:RouteTableId,Associations:Associations}' --output table || true
+  aws ec2 describe-network-acls --filters "Name=vpc-id,Values=${vpc_id}" --query 'NetworkAcls[].{Id:NetworkAclId,Default:IsDefault,Associations:Associations}' --output table || true
+  aws ec2 describe-vpc-peering-connections --filters "Name=requester-vpc-info.vpc-id,Values=${vpc_id}" "Name=accepter-vpc-info.vpc-id,Values=${vpc_id}" --query 'VpcPeeringConnections[].VpcPeeringConnectionId' --output text || true
+}
+
 account_id="$(aws sts get-caller-identity --query Account --output text)"
 region="${AWS_REGION:-${AWS_DEFAULT_REGION:-$(aws configure get region 2>/dev/null || true)}}"
 if [[ -z ${region} ]]; then
@@ -53,6 +63,27 @@ mapfile -t vpc_ids < <(aws_ids ec2 describe-vpcs --filters Name=isDefault,Values
 for vpc_id in "${vpc_ids[@]}"; do
   echo "Deleting resources in VPC ${vpc_id}"
 
+  mapfile -t flow_log_ids < <(aws_ids ec2 describe-flow-logs --filter "Name=resource-id,Values=${vpc_id}" --query 'FlowLogs[].FlowLogId')
+  [[ ${#flow_log_ids[@]} -eq 0 ]] || aws ec2 delete-flow-logs --flow-log-ids "${flow_log_ids[@]}"
+
+  mapfile -t peering_connection_ids < <(aws_ids ec2 describe-vpc-peering-connections --filters "Name=requester-vpc-info.vpc-id,Values=${vpc_id}" --query 'VpcPeeringConnections[].VpcPeeringConnectionId')
+  mapfile -t accepter_peering_connection_ids < <(aws_ids ec2 describe-vpc-peering-connections --filters "Name=accepter-vpc-info.vpc-id,Values=${vpc_id}" --query 'VpcPeeringConnections[].VpcPeeringConnectionId')
+  peering_connection_ids+=("${accepter_peering_connection_ids[@]}")
+  for peering_connection_id in "${peering_connection_ids[@]}"; do
+    aws ec2 delete-vpc-peering-connection --vpc-peering-connection-id "${peering_connection_id}" || true
+  done
+
+  mapfile -t vpn_gateway_ids < <(aws_ids ec2 describe-vpn-gateways --filters "Name=attachment.vpc-id,Values=${vpc_id}" --query 'VpnGateways[].VpnGatewayId')
+  for vpn_gateway_id in "${vpn_gateway_ids[@]}"; do
+    aws ec2 detach-vpn-gateway --vpn-gateway-id "${vpn_gateway_id}" --vpc-id "${vpc_id}"
+    aws ec2 delete-vpn-gateway --vpn-gateway-id "${vpn_gateway_id}"
+  done
+
+  mapfile -t egress_only_internet_gateway_ids < <(aws_ids ec2 describe-egress-only-internet-gateways --filters "Name=attachment.vpc-id,Values=${vpc_id}" --query 'EgressOnlyInternetGateways[].EgressOnlyInternetGatewayId')
+  for egress_only_internet_gateway_id in "${egress_only_internet_gateway_ids[@]}"; do
+    aws ec2 delete-egress-only-internet-gateway --egress-only-internet-gateway-id "${egress_only_internet_gateway_id}"
+  done
+
   mapfile -t instance_ids < <(aws_ids ec2 describe-instances --filters "Name=vpc-id,Values=${vpc_id}" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query 'Reservations[].Instances[].InstanceId')
   if [[ ${#instance_ids[@]} -gt 0 ]]; then
     aws ec2 terminate-instances --instance-ids "${instance_ids[@]}"
@@ -91,6 +122,11 @@ for vpc_id in "${vpc_ids[@]}"; do
     aws ec2 delete-subnet --subnet-id "${subnet_id}"
   done
 
+  mapfile -t network_acl_ids < <(aws_ids ec2 describe-network-acls --filters "Name=vpc-id,Values=${vpc_id}" --query 'NetworkAcls[?IsDefault==`false`].NetworkAclId')
+  for network_acl_id in "${network_acl_ids[@]}"; do
+    aws ec2 delete-network-acl --network-acl-id "${network_acl_id}"
+  done
+
   mapfile -t security_group_ids < <(aws_ids ec2 describe-security-groups --filters "Name=vpc-id,Values=${vpc_id}" --query 'SecurityGroups[?GroupName!=`default`].GroupId')
   for security_group_id in "${security_group_ids[@]}"; do
     aws ec2 delete-security-group --group-id "${security_group_id}"
@@ -101,7 +137,10 @@ for vpc_id in "${vpc_ids[@]}"; do
     aws ec2 delete-route-table --route-table-id "${route_table_id}"
   done
 
-  aws ec2 delete-vpc --vpc-id "${vpc_id}"
+  aws ec2 delete-vpc --vpc-id "${vpc_id}" || {
+    report_vpc_dependencies "${vpc_id}"
+    exit 1
+  }
 done
 
 mapfile -t eip_allocation_ids < <(aws_ids ec2 describe-addresses --query 'Addresses[].AllocationId')
