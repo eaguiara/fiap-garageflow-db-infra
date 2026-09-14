@@ -35,8 +35,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
-      - name: Delete all non-default VPCs
-        run: bash ../scripts/reset-non-default-vpcs.sh
+      - name: Delete all supported regional resources
+        run: bash ../scripts/reset-non-default-vpcs.sh --force
       - run: terraform init
       - name: Show destroy plan
         run: terraform plan -destroy
