@@ -63,9 +63,11 @@ for vpc_id in "${vpc_ids[@]}"; do
   for load_balancer_arn in "${load_balancer_arns[@]}"; do
     aws elbv2 delete-load-balancer --load-balancer-arn "${load_balancer_arn}"
   done
+  [[ ${#load_balancer_arns[@]} -eq 0 ]] || aws elbv2 wait load-balancers-deleted --load-balancer-arns "${load_balancer_arns[@]}"
 
   mapfile -t vpc_endpoint_ids < <(aws_ids ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=${vpc_id}" --query 'VpcEndpoints[].VpcEndpointId')
   [[ ${#vpc_endpoint_ids[@]} -eq 0 ]] || aws ec2 delete-vpc-endpoints --vpc-endpoint-ids "${vpc_endpoint_ids[@]}"
+  [[ ${#vpc_endpoint_ids[@]} -eq 0 ]] || aws ec2 wait vpc-endpoint-deleted --vpc-endpoint-ids "${vpc_endpoint_ids[@]}"
 
   mapfile -t nat_gateway_ids < <(aws_ids ec2 describe-nat-gateways --filter "Name=vpc-id,Values=${vpc_id}" --query 'NatGateways[?State!=`deleted`].NatGatewayId')
   for nat_gateway_id in "${nat_gateway_ids[@]}"; do
